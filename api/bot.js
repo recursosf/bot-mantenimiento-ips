@@ -89,7 +89,7 @@ bot.command('reportar', async (ctx) => {
   const usuario = await getUsuario(ctx.from.id);
   if (!usuario) return ctx.reply('Primero debes registrarte con /start');
   await setEstado(ctx.from.id, 'reportar_tipo', { puesto_salud: usuario.puesto_salud });
-  ctx.reply('¿Qué tipo de solicitud es?\n1️⃣ Infraestructura\n2️⃣ Equipo biomédico\n\nResponde con 1 o 2.');
+  ctx.reply('¿Qué tipo de solicitud es?\n1️⃣ Infraestructura o mobiliario\n2️⃣ Equipo biomédico\n\nResponde con 1 o 2.');
 });
 
 bot.command('mis_reportes', async (ctx) => {
@@ -378,8 +378,8 @@ bot.on('text', async (ctx) => {
       return ctx.reply('Toca el botón para compartir tu contacto, o escribe "omitir".');
 
     case 'reportar_tipo': {
-      const tipo = texto === '1' ? 'infraestructura' : texto === '2' ? 'equipo_biomedico' : null;
-      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura) o 2 (Equipo biomédico).');
+      const tipo = texto === '1' ? 'infraestructura o mobiliario' : texto === '2' ? 'equipo_biomedico' : null;
+      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura o mubiliario) o 2 (Equipo biomédico).');
       await setEstado(ctx.from.id, 'reportar_descripcion', { ...estado.datos, tipo });
       return ctx.reply('Describe brevemente el problema o la necesidad de mantenimiento.');
     }
