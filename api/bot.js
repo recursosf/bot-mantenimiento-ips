@@ -260,6 +260,63 @@ bot.action(/^asignar_directo:([a-zA-Z0-9]+):(\d+)$/, async (ctx) => {
   }
 });
 
+const RANGOS_REPORTE = {
+  dia: 24 * 60 * 60 * 1000,
+  semana: 7 * 24 * 60 * 60 * 1000,
+  mes: 30 * 24 * 60 * 60 * 1000,
+};
+
+bot.command('reporte', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
+  const partes = ctx.message.text.split(' ').filter(Boolean);
+  const periodo = (partes[1] || 'semana').toLowerCase();
+  if (!RANGOS_REPORTE[periodo]) {
+    return ctx.reply('Uso: /reporte <dia|semana|mes>\n\nEjemplo: /reporte semana');
+  }
+
+  const desde = new Date(Date.now() - RANGOS_REPORTE[periodo]).toISOString();
+  const { data } = await supabase.from('solicitudes').select('*').gte('created_at', desde);
+
+  const etiqueta = { dia: 'últimas 24 horas', semana: 'últimos 7 días', mes: 'últimos 30 días' }[periodo];
+
+  if (!data || data.length === 0) {
+    return ctx.reply(`📊 Reporte (${etiqueta})\n\nNo hubo solicitudes en ese periodo.`);
+  }
+
+  const resueltas = data.filter((s) => s.estado === 'resuelto');
+  const enProceso = data.filter((s) => s.estado === 'en_proceso').length;
+  const sinAsignar = data.filter((s) => s.estado === 'pendiente').length;
+
+  let tiempoPromedio = 'sin datos todavía';
+  if (resueltas.length > 0) {
+    const minutosTotales = resueltas.reduce(
+      (suma, s) => suma + (new Date(s.updated_at).getTime() - new Date(s.created_at).getTime()) / 60000,
+      0
+    );
+    const promedioMin = Math.round(minutosTotales / resueltas.length);
+    tiempoPromedio =
+      promedioMin < 60 ? `${promedioMin} min` : promedioMin < 1440 ? `${Math.round(promedioMin / 60)} h` : `${Math.round(promedioMin / 1440)} d`;
+  }
+
+  const porTipo = data.reduce((acc, s) => {
+    acc[s.tipo] = (acc[s.tipo] || 0) + 1;
+    return acc;
+  }, {});
+  const tipoTexto = Object.entries(porTipo)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' · ');
+
+  ctx.reply(
+    `📊 Reporte (${etiqueta})\n\n` +
+      `Total de solicitudes: ${data.length}\n` +
+      `✅ Resueltas: ${resueltas.length}\n` +
+      `🔧 En proceso: ${enProceso}\n` +
+      `🕓 Sin asignar: ${sinAsignar}\n` +
+      `⏱️ Tiempo promedio de resolución: ${tiempoPromedio}\n` +
+      `🏷️ Por tipo: ${tipoTexto}`
+  );
+});
+
 bot.command('resueltos', async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
   const { data } = await supabase
