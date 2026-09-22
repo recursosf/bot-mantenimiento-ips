@@ -196,7 +196,8 @@ bot.command('asignar', async (ctx) => {
   try {
     await bot.telegram.sendMessage(
       idOperario,
-      `🔧 Te asignaron una solicitud:\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}\n\nCuando la resuelvas, escribe:\n/estado ${idCorto} resuelto`
+      `🔧 Te asignaron una solicitud:\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}`,
+      Markup.inlineKeyboard([Markup.button.callback('✅ Marcar como resuelto', `resolver:${idCorto}`)])
     );
   } catch (e) {
     /* operario pudo haber bloqueado el bot */
@@ -224,6 +225,45 @@ bot.command('mis_asignadas', async (ctx) => {
     .map((s) => `#${s.id.slice(0, 8)} · ${s.puesto_salud} · ${s.tipo} · prioridad ${s.prioridad}\n${s.descripcion}`)
     .join('\n\n');
   ctx.reply(`Tus solicitudes asignadas:\n\n${lista}\n\nUsa /estado <id_corto> resuelto cuando termines una.`);
+});
+
+bot.action(/^resolver:(.+)$/, async (ctx) => {
+  const idCorto = ctx.match[1];
+  const { data: solicitudes } = await supabase.from('solicitudes').select('*');
+  const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
+
+  if (!solicitud) return ctx.answerCbQuery('No encontré esa solicitud.');
+
+  const esAdmin = isAdmin(ctx.from.id);
+  const esAsignado = solicitud.asignado_a && String(solicitud.asignado_a) === String(ctx.from.id);
+  if (!esAdmin && !esAsignado) {
+    return ctx.answerCbQuery('Solo el operario asignado o el administrador pueden hacer esto.', { show_alert: true });
+  }
+
+  if (solicitud.estado === 'resuelto') {
+    return ctx.answerCbQuery('Esta solicitud ya estaba marcada como resuelta.');
+  }
+
+  await supabase
+    .from('solicitudes')
+    .update({ estado: 'resuelto', updated_at: new Date().toISOString() })
+    .eq('id', solicitud.id);
+
+  await ctx.answerCbQuery('✅ Marcada como resuelta');
+  try {
+    await ctx.editMessageText(`${ctx.callbackQuery.message.text}\n\n✅ RESUELTO`);
+  } catch (e) {
+    /* si no se puede editar el mensaje, no pasa nada grave */
+  }
+
+  try {
+    await bot.telegram.sendMessage(
+      solicitud.telegram_id,
+      `📢 Tu solicitud #${idCorto} (${solicitud.tipo}) fue marcada como resuelta.`
+    );
+  } catch (e) {
+    /* el usuario pudo haber bloqueado el bot */
+  }
 });
 
 bot.command('estado', async (ctx) => {
