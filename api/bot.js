@@ -39,6 +39,26 @@ async function getUsuario(telegramId) {
   return data;
 }
 
+function formatearFechaHora(fechaIso) {
+  return new Date(fechaIso).toLocaleString('es-CO', {
+    timeZone: 'America/Bogota',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function tiempoAbierta(fechaIso) {
+  const minutos = Math.floor((Date.now() - new Date(fechaIso).getTime()) / 60000);
+  if (minutos < 60) return `${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `${horas} h ${minutos % 60} min`;
+  const dias = Math.floor(horas / 24);
+  return `${dias} d ${horas % 24} h`;
+}
+
 // Busca un operario por ID de Telegram, número de celular o nombre (en ese orden).
 // Devuelve: el usuario encontrado, null si no hay ninguno, o { ambiguo: true, candidatos }
 // si el nombre coincide con más de un operario.
@@ -89,7 +109,7 @@ bot.command('reportar', async (ctx) => {
   const usuario = await getUsuario(ctx.from.id);
   if (!usuario) return ctx.reply('Primero debes registrarte con /start');
   await setEstado(ctx.from.id, 'reportar_tipo', { puesto_salud: usuario.puesto_salud });
-  ctx.reply('¿Qué tipo de solicitud es?\n1️⃣ Infraestructura o mobiliario\n2️⃣ Equipo biomédico\n\nResponde con 1 o 2.');
+  ctx.reply('¿Qué tipo de solicitud es?\n1️⃣ Infraestructura o dotación\n2️⃣ Equipo biomédico\n\nResponde con 1 o 2.');
 });
 
 bot.command('mis_reportes', async (ctx) => {
@@ -117,7 +137,7 @@ bot.command('pendientes', async (ctx) => {
   const lista = data
     .map((s) => {
       const asignacion = s.asignado_a ? `asignada a ${s.asignado_a}` : 'sin asignar';
-      return `#${s.id.slice(0, 8)} · ${s.puesto_salud} · ${s.tipo} · prioridad ${s.prioridad} · ${s.estado} (${asignacion})\n${s.descripcion}`;
+      return `#${s.id.slice(0, 8)} · ${s.puesto_salud} · ${s.tipo} · prioridad ${s.prioridad} · ${s.estado} (${asignacion})\n📅 ${formatearFechaHora(s.created_at)} · ⏱️ lleva abierta ${tiempoAbierta(s.created_at)}\n${s.descripcion}`;
     })
     .join('\n\n');
   ctx.reply(
@@ -371,7 +391,14 @@ bot.on('contact', async (ctx) => {
 bot.on('text', async (ctx) => {
   const texto = ctx.message.text.trim();
   const estado = await getEstado(ctx.from.id);
-  if (!estado) return; // sin flujo activo, se ignora el mensaje
+
+  if (!estado) {
+    const usuario = await getUsuario(ctx.from.id);
+    if (!usuario) return ctx.reply('Para comenzar, escribe /start.');
+    return ctx.reply(
+      'Para reportar una solicitud de mantenimiento, escribe /reportar.\nUsa /mis_reportes para ver el estado de tus solicitudes anteriores.'
+    );
+  }
 
   switch (estado.paso) {
     case 'registro_nombre':
@@ -405,8 +432,8 @@ bot.on('text', async (ctx) => {
       return ctx.reply('Toca el botón para compartir tu contacto, o escribe "omitir".');
 
     case 'reportar_tipo': {
-      const tipo = texto === '1' ? 'infraestructura o mobiliario' : texto === '2' ? 'equipo_biomedico' : null;
-      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura o mobiliario) o 2 (Equipo biomédico).');
+      const tipo = texto === '1' ? 'infraestructura o dotación' : texto === '2' ? 'equipo_biomedico' : null;
+      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura o dotación) o 2 (Equipo biomédico).');
       await setEstado(ctx.from.id, 'reportar_descripcion', { ...estado.datos, tipo });
       return ctx.reply('Describe brevemente el problema o la necesidad de mantenimiento.');
     }
