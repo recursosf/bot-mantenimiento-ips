@@ -213,6 +213,29 @@ bot.command('asignar', async (ctx) => {
   }
 });
 
+bot.command('resueltos', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
+  const { data } = await supabase
+    .from('solicitudes')
+    .select('*')
+    .eq('estado', 'resuelto')
+    .order('updated_at', { ascending: false })
+    .limit(15);
+  if (!data || data.length === 0) return ctx.reply('Todavía no hay solicitudes resueltas.');
+
+  const { data: usuarios } = await supabase.from('usuarios').select('telegram_id, nombre');
+  const nombrePorId = new Map((usuarios || []).map((u) => [String(u.telegram_id), u.nombre]));
+
+  const lista = data
+    .map((s) => {
+      const operario = s.asignado_a ? nombrePorId.get(String(s.asignado_a)) || s.asignado_a : 'sin operario asignado';
+      const fecha = new Date(s.updated_at).toLocaleDateString();
+      return `#${s.id.slice(0, 8)} · ${s.puesto_salud} · ${s.tipo}\nResuelto el ${fecha} por ${operario}`;
+    })
+    .join('\n\n');
+  ctx.reply(`Últimas ${data.length} solicitudes resueltas:\n\n${lista}`);
+});
+
 bot.command('mis_asignadas', async (ctx) => {
   const { data } = await supabase
     .from('solicitudes')
