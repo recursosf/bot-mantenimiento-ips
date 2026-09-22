@@ -76,17 +76,107 @@ bot.command('pendientes', async (ctx) => {
   const { data } = await supabase
     .from('solicitudes')
     .select('*')
-    .eq('estado', 'pendiente')
+    .neq('estado', 'resuelto')
     .order('created_at', { ascending: true });
   if (!data || data.length === 0) return ctx.reply('No hay solicitudes pendientes. 🎉');
   const lista = data
+    .map((s) => {
+      const asignacion = s.asignado_a ? `asignada a ${s.asignado_a}` : 'sin asignar';
+      return `#${s.id.slice(0, 8)} · ${s.puesto_salud} · ${s.tipo} · prioridad ${s.prioridad} · ${s.estado} (${asignacion})\n${s.descripcion}`;
+    })
+    .join('\n\n');
+  ctx.reply(
+    `Solicitudes pendientes:\n\n${lista}\n\nUsa /asignar <id_corto> <id_telegram_operario> para asignarla, o /estado <id_corto> <en_proceso|resuelto> para actualizarla.`
+  );
+});
+
+bot.command('operarios', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
+  const { data } = await supabase.from('usuarios').select('*').eq('rol', 'operario');
+  if (!data || data.length === 0) {
+    return ctx.reply(
+      'No hay operarios registrados todavía.\n\nPara agregar uno: pídele que le escriba /start a este bot, consigue su ID con @userinfobot, y luego usa /hacer_operario <id_telegram>.'
+    );
+  }
+  const lista = data.map((u) => `${u.telegram_id} · ${u.nombre} (${u.puesto_salud || 'sin puesto'})`).join('\n');
+  ctx.reply(`Operarios registrados:\n\n${lista}`);
+});
+
+bot.command('hacer_operario', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
+  const partes = ctx.message.text.split(' ').filter(Boolean);
+  if (partes.length < 2) return ctx.reply('Uso: /hacer_operario <id_telegram>');
+  const idOperario = partes[1];
+  const usuario = await getUsuario(idOperario);
+  if (!usuario) {
+    return ctx.reply('Ese usuario todavía no se ha registrado con /start en el bot. Pídele que lo haga primero.');
+  }
+  await supabase.from('usuarios').update({ rol: 'operario' }).eq('telegram_id', idOperario);
+  ctx.reply(`${usuario.nombre} (${idOperario}) ahora es operario.`);
+  try {
+    await bot.telegram.sendMessage(
+      idOperario,
+      '🔧 Has sido registrado como operario de mantenimiento. Cuando te asignen una solicitud te va a llegar un mensaje aquí. Usa /mis_asignadas para verlas.'
+    );
+  } catch (e) {
+    /* el usuario pudo haber bloqueado el bot */
+  }
+});
+
+bot.command('asignar', async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
+  const partes = ctx.message.text.split(' ').filter(Boolean);
+  if (partes.length < 3) return ctx.reply('Uso: /asignar <id_corto> <id_telegram_operario>');
+  const [, idCorto, idOperario] = partes;
+
+  const operario = await getUsuario(idOperario);
+  if (!operario) return ctx.reply('Ese ID no corresponde a un usuario registrado. Pídele que use /start primero.');
+
+  const { data: solicitudes } = await supabase.from('solicitudes').select('*');
+  const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
+  if (!solicitud) return ctx.reply('No encontré una solicitud con ese id.');
+
+  await supabase
+    .from('solicitudes')
+    .update({ asignado_a: idOperario, estado: 'en_proceso', updated_at: new Date().toISOString() })
+    .eq('id', solicitud.id);
+
+  ctx.reply(`Solicitud #${idCorto} asignada a ${operario.nombre}.`);
+
+  try {
+    await bot.telegram.sendMessage(
+      idOperario,
+      `🔧 Te asignaron una solicitud:\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}\n\nCuando la resuelvas, escribe:\n/estado ${idCorto} resuelto`
+    );
+  } catch (e) {
+    /* operario pudo haber bloqueado el bot */
+  }
+
+  try {
+    await bot.telegram.sendMessage(
+      solicitud.telegram_id,
+      `📢 Tu solicitud #${idCorto} fue asignada a un operario y está en proceso.`
+    );
+  } catch (e) {
+    /* reportante pudo haber bloqueado el bot */
+  }
+});
+
+bot.command('mis_asignadas', async (ctx) => {
+  const { data } = await supabase
+    .from('solicitudes')
+    .select('*')
+    .eq('asignado_a', ctx.from.id)
+    .neq('estado', 'resuelto')
+    .order('created_at', { ascending: true });
+  if (!data || data.length === 0) return ctx.reply('No tienes solicitudes asignadas pendientes.');
+  const lista = data
     .map((s) => `#${s.id.slice(0, 8)} · ${s.puesto_salud} · ${s.tipo} · prioridad ${s.prioridad}\n${s.descripcion}`)
     .join('\n\n');
-  ctx.reply(`Solicitudes pendientes:\n\n${lista}\n\nUsa /estado <id_corto> <en_proceso|resuelto> para actualizar.`);
+  ctx.reply(`Tus solicitudes asignadas:\n\n${lista}\n\nUsa /estado <id_corto> resuelto cuando termines una.`);
 });
 
 bot.command('estado', async (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
   const partes = ctx.message.text.split(' ').filter(Boolean);
   if (partes.length < 3) return ctx.reply('Uso: /estado <id_corto> <en_proceso|resuelto>');
   const [, idCorto, nuevoEstado] = partes;
@@ -96,6 +186,12 @@ bot.command('estado', async (ctx) => {
   const { data: solicitudes } = await supabase.from('solicitudes').select('*');
   const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
   if (!solicitud) return ctx.reply('No encontré una solicitud con ese id.');
+
+  const esAdmin = isAdmin(ctx.from.id);
+  const esAsignado = solicitud.asignado_a && String(solicitud.asignado_a) === String(ctx.from.id);
+  if (!esAdmin && !esAsignado) {
+    return ctx.reply('Solo el administrador o el operario asignado pueden cambiar el estado de esta solicitud.');
+  }
 
   await supabase
     .from('solicitudes')
