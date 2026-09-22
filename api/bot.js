@@ -160,6 +160,34 @@ bot.command('hacer_operario', async (ctx) => {
   }
 });
 
+async function asignarSolicitudAOperario(solicitud, operario) {
+  const idCorto = solicitud.id.slice(0, 8);
+
+  await supabase
+    .from('solicitudes')
+    .update({ asignado_a: operario.telegram_id, estado: 'en_proceso', updated_at: new Date().toISOString() })
+    .eq('id', solicitud.id);
+
+  try {
+    await bot.telegram.sendMessage(
+      operario.telegram_id,
+      `🔧 Te asignaron una solicitud:\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}`,
+      Markup.inlineKeyboard([Markup.button.callback('✅ Marcar como resuelto', `resolver:${idCorto}`)])
+    );
+  } catch (e) {
+    /* operario pudo haber bloqueado el bot */
+  }
+
+  try {
+    await bot.telegram.sendMessage(
+      solicitud.telegram_id,
+      `📢 Tu solicitud #${idCorto} fue asignada a un operario y está en proceso.`
+    );
+  } catch (e) {
+    /* reportante pudo haber bloqueado el bot */
+  }
+}
+
 bot.command('asignar', async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
   const partes = ctx.message.text.split(' ').filter(Boolean);
@@ -180,36 +208,35 @@ bot.command('asignar', async (ctx) => {
     );
   }
   const operario = resultado;
-  const idOperario = operario.telegram_id;
 
   const { data: solicitudes } = await supabase.from('solicitudes').select('*');
   const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
   if (!solicitud) return ctx.reply('No encontré una solicitud con ese id.');
 
-  await supabase
-    .from('solicitudes')
-    .update({ asignado_a: idOperario, estado: 'en_proceso', updated_at: new Date().toISOString() })
-    .eq('id', solicitud.id);
-
+  await asignarSolicitudAOperario(solicitud, operario);
   ctx.reply(`Solicitud #${idCorto} asignada a ${operario.nombre}.`);
+});
 
-  try {
-    await bot.telegram.sendMessage(
-      idOperario,
-      `🔧 Te asignaron una solicitud:\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}`,
-      Markup.inlineKeyboard([Markup.button.callback('✅ Marcar como resuelto', `resolver:${idCorto}`)])
-    );
-  } catch (e) {
-    /* operario pudo haber bloqueado el bot */
+bot.action(/^asignar_directo:([a-zA-Z0-9]+):(\d+)$/, async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.answerCbQuery('Solo el administrador puede asignar.', { show_alert: true });
+  const [, idCorto, idOperario] = ctx.match;
+
+  const { data: solicitudes } = await supabase.from('solicitudes').select('*');
+  const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
+  if (!solicitud) return ctx.answerCbQuery('No encontré esa solicitud.');
+  if (solicitud.asignado_a) {
+    return ctx.answerCbQuery('Esta solicitud ya estaba asignada.', { show_alert: true });
   }
 
+  const operario = await getUsuario(idOperario);
+  if (!operario) return ctx.answerCbQuery('Ese operario ya no está disponible.');
+
+  await asignarSolicitudAOperario(solicitud, operario);
+  await ctx.answerCbQuery(`Asignada a ${operario.nombre} ✅`);
   try {
-    await bot.telegram.sendMessage(
-      solicitud.telegram_id,
-      `📢 Tu solicitud #${idCorto} fue asignada a un operario y está en proceso.`
-    );
+    await ctx.editMessageText(`${ctx.callbackQuery.message.text}\n\n👷 Asignada a ${operario.nombre}`);
   } catch (e) {
-    /* reportante pudo haber bloqueado el bot */
+    /* si no se puede editar el mensaje, no pasa nada grave */
   }
 });
 
@@ -379,7 +406,7 @@ bot.on('text', async (ctx) => {
 
     case 'reportar_tipo': {
       const tipo = texto === '1' ? 'infraestructura o mobiliario' : texto === '2' ? 'equipo_biomedico' : null;
-      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura o mubiliario) o 2 (Equipo biomédico).');
+      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura o mobiliario) o 2 (Equipo biomédico).');
       await setEstado(ctx.from.id, 'reportar_descripcion', { ...estado.datos, tipo });
       return ctx.reply('Describe brevemente el problema o la necesidad de mantenimiento.');
     }
@@ -429,11 +456,21 @@ async function guardarSolicitud(ctx, datos) {
   await ctx.reply(`✅ Solicitud registrada (#${data.id.slice(0, 8)}). Te avisaremos cuando cambie de estado.`);
 
   const { data: admins } = await supabase.from('usuarios').select('telegram_id').eq('rol', 'admin');
+  const { data: operarios } = await supabase.from('usuarios').select('telegram_id, nombre').eq('rol', 'operario');
+
+  const idCorto = data.id.slice(0, 8);
+  const botones = (operarios || []).map((o) =>
+    Markup.button.callback(`👷 ${o.nombre}`, `asignar_directo:${idCorto}:${o.telegram_id}`)
+  );
+  const filas = [];
+  for (let i = 0; i < botones.length; i += 2) filas.push(botones.slice(i, i + 2));
+
   for (const admin of admins || []) {
     try {
       await bot.telegram.sendMessage(
         admin.telegram_id,
-        `🆕 Nueva solicitud #${data.id.slice(0, 8)}\n📍 ${data.puesto_salud}\n🔧 ${data.tipo}\n⚠️ Prioridad: ${data.prioridad}\n📝 ${data.descripcion}`
+        `🆕 Nueva solicitud #${idCorto}\n📍 ${data.puesto_salud}\n🔧 ${data.tipo}\n⚠️ Prioridad: ${data.prioridad}\n📝 ${data.descripcion}`,
+        filas.length ? Markup.inlineKeyboard(filas) : undefined
       );
     } catch (e) {
       /* admin pudo haber bloqueado el bot */
