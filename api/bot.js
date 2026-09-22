@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const { createClient } = require('@supabase/supabase-js');
 
 const bot = new Telegraf(process.env.BOT_TOKEN);
@@ -37,6 +37,41 @@ async function limpiarEstado(telegramId) {
 async function getUsuario(telegramId) {
   const { data } = await supabase.from('usuarios').select('*').eq('telegram_id', telegramId).maybeSingle();
   return data;
+}
+
+// Busca un operario por ID de Telegram, número de celular o nombre (en ese orden).
+// Devuelve: el usuario encontrado, null si no hay ninguno, o { ambiguo: true, candidatos }
+// si el nombre coincide con más de un operario.
+async function buscarOperario(identificador) {
+  const soloDigitos = identificador.replace(/\D/g, '');
+
+  if (/^\d+$/.test(identificador)) {
+    const { data: porId } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('telegram_id', identificador)
+      .eq('rol', 'operario')
+      .maybeSingle();
+    if (porId) return porId;
+  }
+
+  if (soloDigitos.length >= 7) {
+    const { data: operarios } = await supabase.from('usuarios').select('*').eq('rol', 'operario');
+    const sufijo = soloDigitos.slice(-10);
+    const porTelefono = (operarios || []).find(
+      (o) => o.telefono && o.telefono.replace(/\D/g, '').slice(-10) === sufijo
+    );
+    if (porTelefono) return porTelefono;
+  }
+
+  const { data: operarios2 } = await supabase.from('usuarios').select('*').eq('rol', 'operario');
+  const coincidencias = (operarios2 || []).filter((o) =>
+    o.nombre.toLowerCase().includes(identificador.toLowerCase())
+  );
+  if (coincidencias.length === 1) return coincidencias[0];
+  if (coincidencias.length > 1) return { ambiguo: true, candidatos: coincidencias };
+
+  return null;
 }
 
 bot.start(async (ctx) => {
@@ -98,7 +133,9 @@ bot.command('operarios', async (ctx) => {
       'No hay operarios registrados todavía.\n\nPara agregar uno: pídele que le escriba /start a este bot, consigue su ID con @userinfobot, y luego usa /hacer_operario <id_telegram>.'
     );
   }
-  const lista = data.map((u) => `${u.telegram_id} · ${u.nombre} (${u.puesto_salud || 'sin puesto'})`).join('\n');
+  const lista = data
+    .map((u) => `${u.telegram_id} · ${u.nombre}${u.telefono ? ' · 📱 ' + u.telefono : ''} (${u.puesto_salud || 'sin puesto'})`)
+    .join('\n');
   ctx.reply(`Operarios registrados:\n\n${lista}`);
 });
 
@@ -126,11 +163,24 @@ bot.command('hacer_operario', async (ctx) => {
 bot.command('asignar', async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply('Este comando es solo para administradores.');
   const partes = ctx.message.text.split(' ').filter(Boolean);
-  if (partes.length < 3) return ctx.reply('Uso: /asignar <id_corto> <id_telegram_operario>');
-  const [, idCorto, idOperario] = partes;
+  if (partes.length < 3) {
+    return ctx.reply('Uso: /asignar <id_corto> <id_telegram | número de celular | nombre del operario>');
+  }
+  const idCorto = partes[1];
+  const identificador = partes.slice(2).join(' ');
 
-  const operario = await getUsuario(idOperario);
-  if (!operario) return ctx.reply('Ese ID no corresponde a un usuario registrado. Pídele que use /start primero.');
+  const resultado = await buscarOperario(identificador);
+  if (!resultado) {
+    return ctx.reply(`No encontré ningún operario que coincida con "${identificador}". Usa /operarios para ver la lista.`);
+  }
+  if (resultado.ambiguo) {
+    const nombres = resultado.candidatos.map((o) => `${o.nombre} (ID ${o.telegram_id})`).join('\n');
+    return ctx.reply(
+      `Hay más de un operario que coincide con "${identificador}":\n${nombres}\n\nEscribe el nombre completo o usa el ID para no confundirlos.`
+    );
+  }
+  const operario = resultado;
+  const idOperario = operario.telegram_id;
 
   const { data: solicitudes } = await supabase.from('solicitudes').select('*');
   const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
@@ -216,6 +266,18 @@ bot.on('photo', async (ctx) => {
   await guardarSolicitud(ctx, { ...estado.datos, foto_file_id: fileId });
 });
 
+bot.on('contact', async (ctx) => {
+  const estado = await getEstado(ctx.from.id);
+  if (!estado || estado.paso !== 'registro_telefono') return;
+  const telefono = ctx.message.contact.phone_number;
+  await supabase.from('usuarios').update({ telefono }).eq('telegram_id', ctx.from.id);
+  await limpiarEstado(ctx.from.id);
+  ctx.reply(
+    `Listo, registro completo. Usa /reportar para enviar una solicitud de mantenimiento.`,
+    Markup.removeKeyboard()
+  );
+});
+
 bot.on('text', async (ctx) => {
   const texto = ctx.message.text.trim();
   const estado = await getEstado(ctx.from.id);
@@ -233,11 +295,24 @@ bot.on('text', async (ctx) => {
         puesto_salud: texto,
         rol: isAdmin(ctx.from.id) ? 'admin' : 'reportante',
       });
-      await limpiarEstado(ctx.from.id);
+      await setEstado(ctx.from.id, 'registro_telefono', { nombre: estado.datos.nombre });
       return ctx.reply(
-        `Registro completo, ${estado.datos.nombre}. Usa /reportar para enviar una solicitud de mantenimiento.`
+        'Por último, si quieres que te puedan asignar solicitudes usando tu número de celular, comparte tu contacto tocando el botón de abajo. Si prefieres omitirlo, escribe "omitir".',
+        Markup.keyboard([Markup.button.contactRequest('📱 Compartir mi contacto')])
+          .oneTime()
+          .resize()
       );
     }
+
+    case 'registro_telefono':
+      if (texto.toLowerCase() === 'omitir') {
+        await limpiarEstado(ctx.from.id);
+        return ctx.reply(
+          `Registro completo, ${estado.datos.nombre}. Usa /reportar para enviar una solicitud de mantenimiento.`,
+          Markup.removeKeyboard()
+        );
+      }
+      return ctx.reply('Toca el botón para compartir tu contacto, o escribe "omitir".');
 
     case 'reportar_tipo': {
       const tipo = texto === '1' ? 'infraestructura' : texto === '2' ? 'equipo_biomedico' : null;
