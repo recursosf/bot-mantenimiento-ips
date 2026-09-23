@@ -192,7 +192,7 @@ async function asignarSolicitudAOperario(solicitud, operario) {
     await bot.telegram.sendMessage(
       operario.telegram_id,
       `🔧 Te asignaron una solicitud:\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}`,
-      Markup.inlineKeyboard([Markup.button.callback('✅ Marcar como resuelto', `resolver:${idCorto}`)])
+      Markup.inlineKeyboard([Markup.button.callback('📤 Marcar como completado', `resolver:${idCorto}`)])
     );
   } catch (e) {
     /* operario pudo haber bloqueado el bot */
@@ -285,6 +285,7 @@ bot.command('reporte', async (ctx) => {
 
   const resueltas = data.filter((s) => s.estado === 'resuelto');
   const enProceso = data.filter((s) => s.estado === 'en_proceso').length;
+  const enAprobacion = data.filter((s) => s.estado === 'en_aprobacion').length;
   const sinAsignar = data.filter((s) => s.estado === 'pendiente').length;
 
   let tiempoPromedio = 'sin datos todavía';
@@ -311,6 +312,7 @@ bot.command('reporte', async (ctx) => {
       `Total de solicitudes: ${data.length}\n` +
       `✅ Resueltas: ${resueltas.length}\n` +
       `🔧 En proceso: ${enProceso}\n` +
+      `📤 Esperando aprobación: ${enAprobacion}\n` +
       `🕓 Sin asignar: ${sinAsignar}\n` +
       `⏱️ Tiempo promedio de resolución: ${tiempoPromedio}\n` +
       `🏷️ Por tipo: ${tipoTexto}`
@@ -371,25 +373,117 @@ bot.action(/^resolver:(.+)$/, async (ctx) => {
     return ctx.answerCbQuery('Esta solicitud ya estaba marcada como resuelta.');
   }
 
+  await setEstado(ctx.from.id, 'evidencia_foto', { idCorto });
+  await ctx.answerCbQuery();
+  await ctx.reply(
+    `Envía una foto del trabajo terminado para la solicitud #${idCorto}. Si no tienes foto, escribe "no".`
+  );
+});
+
+async function enviarParaAprobacion(ctx, idCorto, fotoFileId) {
+  const { data: solicitudes } = await supabase.from('solicitudes').select('*');
+  const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
+  if (!solicitud) {
+    await limpiarEstado(ctx.from.id);
+    return ctx.reply('No encontré esa solicitud.');
+  }
+
+  await supabase
+    .from('solicitudes')
+    .update({ estado: 'en_aprobacion', foto_resolucion: fotoFileId || null, updated_at: new Date().toISOString() })
+    .eq('id', solicitud.id);
+
+  await limpiarEstado(ctx.from.id);
+  await ctx.reply('Enviado. Le avisamos a quien reportó para que confirme que el trabajo quedó bien.');
+
+  const botones = Markup.inlineKeyboard([
+    Markup.button.callback('✅ Aceptar', `aprobar:${idCorto}`),
+    Markup.button.callback('❌ No quedó bien', `rechazar:${idCorto}`),
+  ]);
+  const texto = `🔧 Tu solicitud #${idCorto} (${solicitud.tipo}) fue atendida.\n\n¿Quedó bien el trabajo?`;
+
+  try {
+    if (fotoFileId) {
+      await bot.telegram.sendPhoto(solicitud.telegram_id, fotoFileId, { caption: texto, ...botones });
+    } else {
+      await bot.telegram.sendMessage(solicitud.telegram_id, texto, botones);
+    }
+  } catch (e) {
+    /* el reportante pudo haber bloqueado el bot */
+  }
+}
+
+async function editarMensajeAprobacion(ctx, textoNuevo) {
+  try {
+    if (ctx.callbackQuery.message.photo) {
+      await ctx.editMessageCaption(textoNuevo);
+    } else {
+      await ctx.editMessageText(textoNuevo);
+    }
+  } catch (e) {
+    /* si no se puede editar el mensaje, no pasa nada grave */
+  }
+}
+
+bot.action(/^aprobar:(.+)$/, async (ctx) => {
+  const idCorto = ctx.match[1];
+  const { data: solicitudes } = await supabase.from('solicitudes').select('*');
+  const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
+  if (!solicitud) return ctx.answerCbQuery('No encontré esa solicitud.');
+
+  const esReportante = String(solicitud.telegram_id) === String(ctx.from.id);
+  if (!esReportante && !isAdmin(ctx.from.id)) {
+    return ctx.answerCbQuery('Solo quien hizo el reporte puede aceptar esto.', { show_alert: true });
+  }
+  if (solicitud.estado === 'resuelto') return ctx.answerCbQuery('Esta solicitud ya estaba cerrada.');
+
   await supabase
     .from('solicitudes')
     .update({ estado: 'resuelto', updated_at: new Date().toISOString() })
     .eq('id', solicitud.id);
 
-  await ctx.answerCbQuery('✅ Marcada como resuelta');
-  try {
-    await ctx.editMessageText(`${ctx.callbackQuery.message.text}\n\n✅ RESUELTO`);
-  } catch (e) {
-    /* si no se puede editar el mensaje, no pasa nada grave */
-  }
+  await ctx.answerCbQuery('✅ Solicitud cerrada');
+  await editarMensajeAprobacion(ctx, '✅ Aceptado. Solicitud cerrada.');
 
-  try {
-    await bot.telegram.sendMessage(
-      solicitud.telegram_id,
-      `📢 Tu solicitud #${idCorto} (${solicitud.tipo}) fue marcada como resuelta.`
-    );
-  } catch (e) {
-    /* el usuario pudo haber bloqueado el bot */
+  if (solicitud.asignado_a) {
+    try {
+      await bot.telegram.sendMessage(solicitud.asignado_a, `✅ Tu trabajo en la solicitud #${idCorto} fue aceptado. Quedó cerrada.`);
+    } catch (e) {
+      /* el operario pudo haber bloqueado el bot */
+    }
+  }
+});
+
+bot.action(/^rechazar:(.+)$/, async (ctx) => {
+  const idCorto = ctx.match[1];
+  const { data: solicitudes } = await supabase.from('solicitudes').select('*');
+  const solicitud = (solicitudes || []).find((s) => s.id.startsWith(idCorto));
+  if (!solicitud) return ctx.answerCbQuery('No encontré esa solicitud.');
+
+  const esReportante = String(solicitud.telegram_id) === String(ctx.from.id);
+  if (!esReportante && !isAdmin(ctx.from.id)) {
+    return ctx.answerCbQuery('Solo quien hizo el reporte puede hacer esto.', { show_alert: true });
+  }
+  if (solicitud.estado === 'resuelto') return ctx.answerCbQuery('Esta solicitud ya estaba cerrada.');
+
+  await supabase
+    .from('solicitudes')
+    .update({ estado: 'en_proceso', updated_at: new Date().toISOString() })
+    .eq('id', solicitud.id);
+
+  await ctx.answerCbQuery('Devuelta al operario');
+  await editarMensajeAprobacion(ctx, '❌ No aprobada. Se devolvió al operario para revisarla de nuevo.');
+
+  if (solicitud.asignado_a) {
+    try {
+      await bot.telegram.sendMessage(
+        solicitud.asignado_a,
+        `❌ La persona que reportó no quedó conforme con la solicitud #${idCorto}. Por favor revísala de nuevo.`,
+        Markup.inlineKeyboard([Markup.button.callback('📤 Marcar como completado', `resolver:${idCorto}`)])
+      );
+    } catch (e) {
+      /* el operario pudo haber bloqueado el bot */
+    }
   }
 });
 
@@ -410,6 +504,12 @@ bot.command('estado', async (ctx) => {
     return ctx.reply('Solo el administrador o el operario asignado pueden cambiar el estado de esta solicitud.');
   }
 
+  if (nuevoEstado === 'resuelto' && !esAdmin) {
+    return ctx.reply(
+      'Para cerrar una solicitud, usa el botón "📤 Marcar como completado" que te llegó al asignártela — así la persona que reportó puede confirmar que el trabajo quedó bien.'
+    );
+  }
+
   await supabase
     .from('solicitudes')
     .update({ estado: nuevoEstado, updated_at: new Date().toISOString() })
@@ -428,9 +528,15 @@ bot.command('estado', async (ctx) => {
 
 bot.on('photo', async (ctx) => {
   const estado = await getEstado(ctx.from.id);
-  if (!estado || estado.paso !== 'reportar_foto') return;
+  if (!estado) return;
   const fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-  await guardarSolicitud(ctx, { ...estado.datos, foto_file_id: fileId });
+
+  if (estado.paso === 'reportar_foto') {
+    return guardarSolicitud(ctx, { ...estado.datos, foto_file_id: fileId });
+  }
+  if (estado.paso === 'evidencia_foto') {
+    return enviarParaAprobacion(ctx, estado.datos.idCorto, fileId);
+  }
 });
 
 bot.on('contact', async (ctx) => {
@@ -509,6 +615,10 @@ bot.on('text', async (ctx) => {
     case 'reportar_foto':
       if (texto.toLowerCase() === 'no') return guardarSolicitud(ctx, estado.datos);
       return ctx.reply('Envía la foto o escribe "no" para continuar sin foto.');
+
+    case 'evidencia_foto':
+      if (texto.toLowerCase() === 'no') return enviarParaAprobacion(ctx, estado.datos.idCorto, null);
+      return ctx.reply('Envía la foto del trabajo terminado, o escribe "no" para continuar sin foto.');
 
     default:
       return;
