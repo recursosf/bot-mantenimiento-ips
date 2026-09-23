@@ -109,7 +109,7 @@ bot.command('reportar', async (ctx) => {
   const usuario = await getUsuario(ctx.from.id);
   if (!usuario) return ctx.reply('Primero debes registrarte con /start');
   await setEstado(ctx.from.id, 'reportar_tipo', { puesto_salud: usuario.puesto_salud });
-  ctx.reply('¿Qué tipo de solicitud es?\n1️⃣ Infraestructura\n2️⃣ Equipo biomédico\n\nResponde con 1 o 2.');
+  ctx.reply('¿Qué tipo de solicitud es?\n1️⃣ Infraestructura/mobiliario\n2️⃣ Equipo biomédico\n\nResponde con 1 o 2.');
 });
 
 bot.command('mis_reportes', async (ctx) => {
@@ -375,9 +375,7 @@ bot.action(/^resolver:(.+)$/, async (ctx) => {
 
   await setEstado(ctx.from.id, 'evidencia_foto', { idCorto });
   await ctx.answerCbQuery();
-  await ctx.reply(
-    `Envía una foto del trabajo terminado para la solicitud #${idCorto}. Si no tienes foto, escribe "no".`
-  );
+  await ctx.reply(`Para cerrar la solicitud #${idCorto} debes enviar una foto del trabajo terminado.`);
 });
 
 async function enviarParaAprobacion(ctx, idCorto, fotoFileId) {
@@ -478,7 +476,7 @@ bot.action(/^rechazar:(.+)$/, async (ctx) => {
     try {
       await bot.telegram.sendMessage(
         solicitud.asignado_a,
-        `❌ La persona que reportó no quedó conforme con la solicitud #${idCorto}. Por favor revísala de nuevo.`,
+        `❌ Solución no aceptada, por favor resolver.\n\n#${idCorto}\n📍 ${solicitud.puesto_salud}\n🏷️ ${solicitud.tipo}\n⚠️ Prioridad: ${solicitud.prioridad}\n📝 ${solicitud.descripcion}`,
         Markup.inlineKeyboard([Markup.button.callback('📤 Marcar como completado', `resolver:${idCorto}`)])
       );
     } catch (e) {
@@ -596,7 +594,7 @@ bot.on('text', async (ctx) => {
 
     case 'reportar_tipo': {
       const tipo = texto === '1' ? 'infraestructura' : texto === '2' ? 'equipo_biomedico' : null;
-      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura) o 2 (Equipo biomédico).');
+      if (!tipo) return ctx.reply('Responde con 1 (Infraestructura/mobiliario) o 2 (Equipo biomédico).');
       await setEstado(ctx.from.id, 'reportar_descripcion', { ...estado.datos, tipo });
       return ctx.reply('Describe brevemente el problema o la necesidad de mantenimiento.');
     }
@@ -617,8 +615,7 @@ bot.on('text', async (ctx) => {
       return ctx.reply('Envía la foto o escribe "no" para continuar sin foto.');
 
     case 'evidencia_foto':
-      if (texto.toLowerCase() === 'no') return enviarParaAprobacion(ctx, estado.datos.idCorto, null);
-      return ctx.reply('Envía la foto del trabajo terminado, o escribe "no" para continuar sin foto.');
+      return ctx.reply('Debes enviar una foto del trabajo terminado para poder cerrar esta solicitud.');
 
     default:
       return;
