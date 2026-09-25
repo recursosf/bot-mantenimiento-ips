@@ -447,7 +447,7 @@ bot.action(/^aprobar:(.+)$/, async (ctx) => {
     try {
       await bot.telegram.sendMessage(solicitud.asignado_a, `✅ Tu trabajo en la solicitud #${idCorto} fue aceptado. Quedó cerrada.`);
     } catch (e) {
-      /* el operario pudo haber bloqueado el bot */
+      console.error('Error enviando mensaje al operario:', e?.message || e);
     }
   }
 });
@@ -480,7 +480,7 @@ bot.action(/^rechazar:(.+)$/, async (ctx) => {
         Markup.inlineKeyboard([Markup.button.callback('📤 Marcar como completado', `resolver:${idCorto}`)])
       );
     } catch (e) {
-      /* el operario pudo haber bloqueado el bot */
+      console.error('Error enviando mensaje al operario:', e?.message || e);
     }
   }
 });
