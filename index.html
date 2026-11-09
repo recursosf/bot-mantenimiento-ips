@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#002ac6">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Inspección">
+<title>Inspección preoperacional de vehículos</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#f4f6f8;--card:#fff;--tx:#17212b;--mu:#5b6b7a;--bd:#d5dde5;--ac:#002ac6;--ok:#0b6e4f;--ko:#c0392b;--na:#6b7785;--wa:#fdecea}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark;--bg:#0f1519;--card:#18222a;--tx:#e8eef3;--mu:#98a7b5;--bd:#2c3b47;--ac:#5a72ff;--ok:#3fbf93;--ko:#ff7b6b;--na:#8fa0b0;--wa:#3a1d1a}}
+:root[data-theme="dark"]{color-scheme:dark;--bg:#0f1519;--card:#18222a;--tx:#e8eef3;--mu:#98a7b5;--bd:#2c3b47;--ac:#5a72ff;--ok:#3fbf93;--ko:#ff7b6b;--na:#8fa0b0;--wa:#3a1d1a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:14px}
+h1{font-size:1.25rem;margin:4px 0}
+.sub{color:var(--mu);font-size:.85rem;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:0 0 12px}
+.card h2{font-size:1rem;margin:0 0 8px;color:var(--ac)}
+label.f{display:block;font-size:.8rem;color:var(--mu);margin:8px 0 2px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.it{padding:8px 0;border-top:1px solid var(--bd)}
+.it:first-of-type{border-top:0}
+.it .n{font-size:.95rem;margin-bottom:6px}
+.crit{font-size:.7rem;background:var(--ko);color:#fff;border-radius:4px;padding:1px 5px;margin-left:6px;vertical-align:middle}
+.opts{display:flex;gap:6px}
+.opts button{flex:1;padding:9px 4px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);border-radius:8px;font:inherit;font-weight:600}
+.opts button.s-b{background:var(--ok);color:#fff;border-color:var(--ok)}
+.opts button.s-m{background:var(--ko);color:#fff;border-color:var(--ko)}
+.opts button.s-r{background:var(--wr);color:#fff;border-color:var(--wr)}
+.opts button.s-n{background:var(--na);color:#fff;border-color:var(--na)}
+.res{border-radius:12px;padding:14px;font-weight:700;text-align:center;margin:0 0 12px}
+.res.go{background:var(--ok);color:#fff}.res.stop{background:var(--ko);color:#fff}.res.pend{background:var(--card);border:1px dashed var(--bd);color:var(--mu);font-weight:500}
+.acts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.acts button,.acts a{padding:12px;border-radius:10px;border:0;background:var(--ac);color:#fff;font:inherit;font-weight:600;text-align:center;text-decoration:none}
+.acts .sec{background:var(--card);color:var(--tx);border:1px solid var(--bd)}
+pre{white-space:pre-wrap;font-size:.8rem;background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:10px;max-height:240px;overflow:auto}
+.hist div{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--bd);font-size:.85rem}
+.msg{font-size:.85rem;color:var(--ac);min-height:1.2em;margin:6px 0}
+.ph{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.ph img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--bd)}
+:root{--wr:#b86e00}
+.res.warn{background:#c2570c;color:#fff}
+.rs{font-weight:400;font-size:.85rem;margin-top:4px}
+.opts button{font-size:.88rem;padding:9px 2px}
+</style>
+</head>
+<body>
+<main>
+<div style="display:flex;align-items:center;gap:10px;border-bottom:3px solid var(--ac);padding-bottom:8px;margin-bottom:10px"><img src="logo.png" alt="IPS Municipal de Ipiales" style="height:52px;width:auto;background:#fff;border-radius:8px;padding:3px"><h1 style="margin:0;font-size:1.05rem">INSPECCIÓN DEL VEHÍCULO ANTES DE INICIAR ACTIVIDADES</h1></div>
+<p class="sub">Diligenciar antes de iniciar actividades</p>
+
+<div class="card" id="head">
+<h2>Datos generales</h2>
+<div class="row">
+<div><label class="f">Fecha y hora</label><input id="fecha" readonly></div>
+<div><label class="f">Placa</label><input id="placa" placeholder="ABC123" maxlength="7" style="text-transform:uppercase"></div>
+</div>
+<label class="f">Nombre del conductor</label><input id="cond" placeholder="Nombre completo">
+<div class="row">
+<div><label class="f">Tipo de vehículo</label>
+<select id="tipo"><option>Ambulancia</option><option>Camioneta / campero</option><option>Automóvil</option><option>Motocicleta</option><option>Otro</option></select></div>
+<div><label class="f">Kilometraje</label><input id="km" type="number" inputmode="numeric" placeholder="km"></div>
+</div>
+<label class="f">Actividad / ruta del día</label><input id="ruta" placeholder="Ej. Visita puestos de salud">
+</div>
+
+<div id="lista"></div>
+
+<div class="card"><h2>Observaciones</h2>
+<textarea id="obs" rows="3" placeholder="Novedades, daños, fugas, ruidos..."></textarea></div>
+
+<div class="card"><h2>Foto de la falla (opcional)</h2><input id="foto" type="file" accept="image/*" capture="environment"><div class="ph" id="ph"></div><p class="sub" id="fn">Hasta 3 fotos, que van dentro del PDF. Repita para agregar otra.</p></div>
+
+<div class="res pend" id="res">Complete la lista para ver el resultado</div>
+
+<div class="card"><h2>Firma del conductor</h2>
+<canvas id="sig" width="600" height="200" style="width:100%;height:auto;aspect-ratio:3/1;border:1px dashed var(--bd);border-radius:8px;background:#fff;touch-action:none;display:block"></canvas>
+<p class="sub" style="margin:6px 0">Firme con el dedo dentro del recuadro.</p>
+<div class="acts"><button class="sec" id="sigclr" style="grid-column:1/-1">Borrar firma</button></div></div>
+
+<div class="card"><h2>Enviar inspección</h2>
+<div class="acts"><button id="pdfsend" style="grid-column:1/-1">Enviar PDF por WhatsApp</button></div>
+<p class="sub" style="margin-top:8px">Toque el botón, elija WhatsApp y luego el grupo. El PDF no se descarga en el celular.</p><p class="msg" id="msg"></p></div>
+
+<div class="card hist"><h2>Últimas inspecciones (este dispositivo)</h2><div id="hist"><span class="sub">Sin registros</span></div></div>
+</main>
+<script src="jspdf.umd.min.js"></script>
+<script src="pdf.js"></script>
+<script>
+var G=[
+["Documentos",[["Licencia de conducción vigente y de la categoría",3,1],["SOAT vigente",3,1],["Revisión técnico-mecánica vigente",3,1],["Tarjeta de propiedad",2,1]]],
+["Líquidos y combustible",[["Nivel de aceite de motor",2],["Nivel de refrigerante",2],["Nivel de líquido de frenos",3],["Líquido de dirección hidráulica",2],["Agua del limpiaparabrisas",1],["Combustible suficiente para la ruta",1]]],
+["Llantas y ruedas",[["Presión de aire correcta",2],["Labrado en buen estado, sin cortes ni deformaciones",3],["Llanta de repuesto en buen estado",2],["Tuercas completas y ajustadas",3]]],
+["Frenos, dirección y suspensión",[["Freno de servicio responde (pedal firme)",3],["Freno de parqueo sostiene el vehículo",3],["Dirección sin juego ni ruidos",3],["Suspensión sin ruidos ni fugas",2]]],
+["Luces, pito y señales",[["Luces bajas y altas",3],["Direccionales y estacionarias",3],["Luces de freno y reversa",3],["Pito funciona",2],["Alarma de reversa (si aplica)",1],["Ambulancia: sirena y luces de emergencia",2]]],
+["Visibilidad",[["Parabrisas sin fisuras que obstruyan",3],["Limpiabrisas en buen estado",3],["Espejos retrovisores completos y ajustados",2]]],
+["Seguridad del ocupante",[["Cinturones de seguridad funcionales",3],["Puertas y seguros operan bien",3],["Casco y chaleco (moto)",2]]],
+["Motor y tablero",[["Sin fugas de aceite, agua o combustible",3],["Batería con bornes firmes",2],["Correas y mangueras visibles en buen estado",2],["Tablero sin testigos de alarma encendidos",2]]],
+["Equipo de carretera y botiquín",[["Extintor vigente y cargado",2],["Botiquín completo",2],["Dos señales de carretera (triángulos)",2],["Gato y llave de cruz",2],["Tacos o cuñas y linterna",1]]],
+["Aseo y orden",[["Cabina limpia y sin objetos sueltos",1],["Carga o equipos bien asegurados",3]]]
+];
+var S={},$=function(i){return document.getElementById(i)};
+var f=new Date();function pad(n){return String(n).padStart(2,"0")}
+$("fecha").value=f.getFullYear()+"-"+pad(f.getMonth()+1)+"-"+pad(f.getDate())+" "+pad(f.getHours())+":"+pad(f.getMinutes());
+var h="";
+G.forEach(function(g,gi){h+='<div class="card"><h2>'+(gi+1)+". "+g[0]+"</h2>";
+g[1].forEach(function(it,ii){var k=gi+"_"+ii;h+='<div class="it"><div class="n">'+it[0]+'</div><div class="opts" data-k="'+k+'"><button data-v="b">Bien</button>'+(it[2]?"":'<button data-v="r">Regular</button>')+'<button data-v="m">Mal</button><button data-v="n">N/A</button></div></div>'});
+h+="</div>"});
+$("lista").innerHTML=h;
+document.addEventListener("click",function(e){var b=e.target.closest(".opts button");if(!b)return;var k=b.parentNode.dataset.k;S[k]=b.dataset.v;
+b.parentNode.querySelectorAll("button").forEach(function(x){x.className=x===b?"s-"+x.dataset.v:""});upd()});
+["placa","cond","tipo","km","ruta","obs"].forEach(function(i){$(i).addEventListener("input",upd)});
+function calc(){var t=0,d=0,L=[],lv=0;
+G.forEach(function(g,gi){g[1].forEach(function(it,ii){t++;var v=S[gi+"_"+ii];if(v)d++;
+var l=v==="m"?it[1]:(v==="r"?Math.max(1,it[1]-1):0);
+if(l){L.push({n:it[0],l:l,v:v});if(l>lv)lv=l}})});
+L.sort(function(a,b){return b.l-a.l});
+return{t:t,d:d,lv:lv,items:L}}
+var RS=[
+{c:"go",t:"APTO PARA INICIAR ACTIVIDADES",s:"Sin fallas reportadas.",e:"APTO"},
+{c:"go",t:"NIVEL 1 · LEVE: SALIDA AUTORIZADA",s:"Reportar las novedades a mantenimiento.",e:"NIVEL 1 LEVE: SALIDA AUTORIZADA"},
+{c:"warn",t:"NIVEL 2 · MAYOR: SALIDA CONDICIONADA",s:"No salir hasta que mantenimiento o una persona competente evalúe y autorice.",e:"NIVEL 2 MAYOR: SALIDA CONDICIONADA"},
+{c:"stop",t:"NIVEL 3 · CRÍTICA: SALIDA PROHIBIDA",s:"Vehículo inmovilizado preventivamente. Solo sale después de corregir y verificar.",e:"NIVEL 3 CRITICA: SALIDA PROHIBIDA"}];
+function upd(){var c=calc(),r=$("res");
+if(c.d<c.t){r.className="res pend";r.textContent="Faltan ítems por marcar ("+c.d+"/"+c.t+")";return}
+var q=RS[c.lv],top=c.items.filter(function(i){return i.l===c.lv}).map(function(i){return i.n});
+r.className="res "+q.c;r.innerHTML="<div>"+q.t+"</div><div class='rs'>"+q.s+(top.length?"<br>"+top.join("; "):"")+"</div>"}
+function say(m){$("msg").textContent=m}
+function hist(){try{var a=JSON.parse(localStorage.getItem("insp")||"[]");if(!a.length)return;var N=["Apto","Nivel 1 Leve","Nivel 2 Condicionada","Nivel 3 Prohibida"],C=["ok","ok","wr","ko"];
+$("hist").innerHTML=a.slice(0,10).map(function(x){var l=x.lv!==undefined?x.lv:(x.ok?0:3);return"<div><span>"+x.f+" · "+x.p+"</span><b style='color:var(--"+C[l]+")'>"+N[l]+"</b></div>"}).join("")}catch(e){}}
+function sv(c){try{var a=JSON.parse(localStorage.getItem("insp")||"[]");a.unshift({f:$("fecha").value,p:$("placa").value.trim().toUpperCase(),lv:c.lv});localStorage.setItem("insp",JSON.stringify(a.slice(0,30)));hist()}catch(e){}}
+var P=[];
+$("foto").addEventListener("change",function(e){var fl=e.target.files[0];e.target.value="";if(!fl||P.length>=3)return;shrink(fl,function(o){if(o){P.push(o);pv()}})});
+function shrink(fl,cb){var im=new Image(),u=URL.createObjectURL(fl);im.onload=function(){var s=Math.min(1,1280/Math.max(im.width,im.height)),w=Math.round(im.width*s),h=Math.round(im.height*s),c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(im,0,0,w,h);URL.revokeObjectURL(u);cb({d:c.toDataURL("image/jpeg",.7),w:w,h:h})};im.onerror=function(){cb(null)};im.src=u}
+function pv(){$("ph").innerHTML="";P.forEach(function(p,i){var m=document.createElement("img");m.src=p.d;m.onclick=function(){P.splice(i,1);pv()};$("ph").appendChild(m)});$("fn").textContent=P.length?P.length+" foto(s). Toque una para quitarla.":"Hasta 3 fotos, que van dentro del PDF. Repita para agregar otra."}
+var sg=$("sig"),sx=sg.getContext("2d"),dr=0,hs=0;
+function sclr(){sx.fillStyle="#fff";sx.fillRect(0,0,600,200);sx.lineWidth=3;sx.lineCap="round";sx.lineJoin="round";sx.strokeStyle="#111";hs=0}
+sclr();
+function pt(e){var r=sg.getBoundingClientRect();return[(e.clientX-r.left)*600/r.width,(e.clientY-r.top)*200/r.height]}
+sg.addEventListener("pointerdown",function(e){e.preventDefault();dr=1;var p=pt(e);sx.beginPath();sx.moveTo(p[0],p[1]);sx.lineTo(p[0]+.1,p[1]+.1);sx.stroke();sx.beginPath();sx.moveTo(p[0],p[1]);hs=1;try{sg.setPointerCapture(e.pointerId)}catch(x){}});
+sg.addEventListener("pointermove",function(e){if(!dr)return;e.preventDefault();var p=pt(e);sx.lineTo(p[0],p[1]);sx.stroke();sx.beginPath();sx.moveTo(p[0],p[1])});
+["pointerup","pointercancel"].forEach(function(n){sg.addEventListener(n,function(){dr=0})});
+$("sigclr").onclick=sclr;
+var LG=null;(function(){var im=new Image();im.onload=function(){try{var c=document.createElement("canvas");c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext("2d").drawImage(im,0,0);LG={d:c.toDataURL("image/png"),w:c.width,h:c.height}}catch(e){}};im.src="logo.png"})();
+var ENTIDAD="IPS Municipal de Ipiales E.S.E.";
+function ok(){var c=calc();if(!$("placa").value.trim()||!$("cond").value.trim()){say("Escriba la placa y el nombre del conductor");return 0}if(c.d<c.t){say("Faltan "+(c.t-c.d)+" ítems por marcar");return 0}if(!hs){say("Falta la firma del conductor");return 0}if(!window.jspdf||!window.buildPDF){say("No cargó el generador de PDF. Abra la app con internet y vuelva a intentar");return 0}return 1}
+function mk(){var c=calc(),fe=$("fecha").value,pl=$("placa").value.trim().toUpperCase();
+var doc=buildPDF({J:window.jspdf.jsPDF,G:G,S:S,c:c,P:P,logo:LG,sig:sg.toDataURL("image/jpeg",.85),entidad:ENTIDAD,f:{fecha:fe,placa:pl,cond:$("cond").value.trim(),tipo:$("tipo").value,km:$("km").value,ruta:$("ruta").value.trim(),obs:$("obs").value.trim()}});
+var nm="Inspeccion_"+(pl.replace(/[^A-Z0-9]/g,"")||"vehiculo")+"_"+fe.slice(0,10).replace(/-/g,"")+".pdf";
+var est=RS[c.lv].e;
+return{c:c,doc:doc,nm:nm,est:est,pl:pl,f:new File([doc.output("blob")],nm,{type:"application/pdf"})}}
+$("pdfsend").onclick=function(){if(!ok())return;var r=mk();
+var sd={files:[r.f],title:"Inspección "+r.pl,text:"Inspección del vehículo "+r.pl+": "+r.est};
+if(navigator.canShare&&navigator.canShare(sd)){navigator.share(sd).then(function(){sv(r.c);say("Inspección enviada")}).catch(function(e){if(e&&e.name==="AbortError")return;say("No se pudo compartir. Intente de nuevo")})}
+else say("Este celular o navegador no permite compartir el PDF. Use Chrome (Android) o Safari (iPhone) actualizados.")};
+hist();upd();
+if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){})})}
+</script>
+</body>
+</html>
